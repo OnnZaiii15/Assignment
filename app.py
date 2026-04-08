@@ -61,17 +61,7 @@ def load_data():
             df['target'] = target_str.apply(lambda x: 1 if x == 'yes' else 0)
         else:
             df['target'] = target_str.apply(lambda x: 0 if x in ['0','absence','no'] else 1)
-    
-    df = df.drop(columns=[target_col])
-    df = df.apply(pd.to_numeric, errors='coerce')
-    before = len(df)
-    df = df.dropna()
-    st.write(f"Dropped {before - len(df)} rows with missing values.")
-    df = df.astype(float)
-    df['target'] = df['target'].astype(int)
-    st.write(f"✅ Loaded {len(df)} patients.")
-    st.write("Target distribution:", df['target'].value_counts().to_dict())
-    return df
+
 
 # Helper function to show target distribution table
 def show_target_distribution(df):
