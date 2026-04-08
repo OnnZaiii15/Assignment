@@ -107,6 +107,8 @@ def train_models(X_train, y_train):
     joblib.dump(knn, "models/knn.joblib")
     joblib.dump(svm, "models/svm.joblib")
     return {"KNN": knn, "SVM": svm}
+      X = df.drop('target', axis=1)
+      y = df['target']
 
 # Session state
 if "trained" not in st.session_state:
@@ -141,8 +143,9 @@ if menu == "Dataset Overview":
 
 if st.button("🚀 Train Models"):
     with st.spinner("Training in progress..."):
+      
         # Split
-        X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=test_size, random_state=42, stratify=y)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42, stratify=y)
         # SMOTE
         smote = SMOTE(random_state=42)
         X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
