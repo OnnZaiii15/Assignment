@@ -1,5 +1,5 @@
 """
-Heart Disease Prediction Web App (Simplified & Robust)
+Heart Disease Prediction Web App (Robust)
 """
 
 import streamlit as st
@@ -18,195 +18,317 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from imblearn.over_sampling import SMOTE
 
 # ---------------------------
-# Load data with caching
+# Load data with robust preprocessing
 # ---------------------------
 @st.cache_data
 def load_data():
-    # The Cleveland dataset has 14 columns, no header
-    column_names = [
-        'age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg',
-        'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal', 'target_raw'
-    ]
-    
+    # Try to read the CSV – first assume it has a header
     try:
-        # Try reading with no header (the default UCI format)
-        df = pd.read_csv("heart.csv", names=column_names, header=None)
-    except Exception as e:
-        st.error(f"Error reading CSV: {e}")
-        # Fallback: try with header
         df = pd.read_csv("heart.csv")
-        if len(df.columns) == 14:
-            df.columns = column_names
-        else:
-            st.error("CSV does not have 14 columns. Please check the file.")
-            return None
+        st.write(f"Read CSV with header, shape: {df.shape}")
+    except:
+        # If that fails, try reading without header (UCI format)
+        column_names = ['age','sex','cp','trestbps','chol','fbs','restecg',
+                        'thalach','exang','oldpeak','slope','ca','thal','target_raw']
+        df = pd.read_csv("heart.csv", names=column_names, header=None)
+        st.write(f"Read CSV without header, shape: {df.shape}")
+
+    # Check the target column name – might be 'target', 'Heart Disease', or 'target_raw'
+    possible_target_cols = ['target', 'Heart Disease', 'target_raw', 'num', 'condition']
+    target_col = None
+    for col in possible_target_cols:
+        if col in df.columns:
+            target_col = col
+            break
+    if target_col is None:
+        # If none of the above, assume the last column is the target
+        target_col = df.columns[-1]
+        st.warning(f"No known target column name found; assuming last column '{target_col}' is the target.")
     
-    # Convert target: original values 1,2,3,4 -> 1 (disease), 0 -> 0 (no disease)
-    df['target'] = df['target_raw'].apply(lambda x: 1 if x > 0 else 0)
-    df = df.drop('target_raw', axis=1)
-    
-    # Replace '?' with NaN and drop missing rows
+    # Convert target column to binary (0 = no disease, 1 = disease)
+    # First, handle missing values (represented as '?')
     df = df.replace('?', np.nan)
+    
+    # Try to convert the target column to numeric; if it fails, it contains strings
+    try:
+        numeric_target = pd.to_numeric(df[target_col])
+        # Numeric: original 0 = no disease, 1,2,3,4 = disease -> map >0 to 1
+        df['target'] = numeric_target.apply(lambda x: 1 if x > 0 else 0)
+    except (ValueError, TypeError):
+        # String target: typical values are 'Presence'/'Absence' or 'Yes'/'No'
+        target_str = df[target_col].astype(str).str.lower()
+        if 'presence' in target_str.values or 'present' in target_str.values:
+            df['target'] = target_str.apply(lambda x: 1 if x in ['presence', 'present'] else 0)
+        elif 'yes' in target_str.values:
+            df['target'] = target_str.apply(lambda x: 1 if x == 'yes' else 0)
+        else:
+            # Fallback: assume any non-zero string means disease
+            df['target'] = target_str.apply(lambda x: 0 if x == '0' or x == 'absence' or x == 'no' else 1)
+    
+    # Drop the original target column
+    if target_col in df.columns:
+        df = df.drop(columns=[target_col])
+    
+    # Replace '?' in feature columns with NaN and drop rows with any NaN
+    df = df.apply(pd.to_numeric, errors='coerce')  # force all feature columns to numeric
+    before = len(df)
     df = df.dropna()
+    st.write(f"Dropped {before - len(df)} rows with missing values.")
     
-    # Ensure all columns are numeric
+    # Ensure all columns are numeric and target is integer
     df = df.astype(float)
+    df['target'] = df['target'].astype(int)
     
-    st.write(f"✅ Loaded {len(df)} patient records")
-    st.write(f"Target distribution:\n{df['target'].value_counts()}")
+    st.write(f"✅ Final dataset: {len(df)} patients, {df.shape[1]-1} features")
+    st.write("Target distribution:")
+    st.write(df['target'].value_counts())
     return df
 
 # ---------------------------
-# Streamlit UI
+# Streamlit app configuration
 # ---------------------------
 st.set_page_config(page_title="Heart Disease Predictor", layout="wide")
 st.title("❤️ Heart Disease Prediction Web App")
-st.markdown("Uses **KNN** and **SVM** with SMOTE balancing")
+st.markdown("Built with **Streamlit** | Uses **K‑Nearest Neighbors (KNN)** and **Support Vector Machine (SVM)**")
+
+# Sidebar menu
+menu = st.sidebar.selectbox("Menu", ["Dataset Overview", "Train Models", "Predict Heart Disease", "Data Visualization"])
+
+# Load and cache dataset
+@st.cache_data
+def load_data():
+    df = pd.read_csv("heart.csv")
+    df = preprocess_heart_data(df)
+    return df
 
 df = load_data()
-if df is None:
-    st.stop()
-
-# Sidebar
-menu = st.sidebar.selectbox("Menu", ["Dataset Overview", "Train Models", "Predict Heart Disease", "Data Visualization"])
 
 # Session state
 if "trained" not in st.session_state:
     st.session_state.trained = False
+if "performance_train" not in st.session_state:
+    st.session_state.performance_train = []
 if "performance_test" not in st.session_state:
     st.session_state.performance_test = []
+if "scaler" not in st.session_state:
+    st.session_state.scaler = None
 
 # ---------------------------
 # Menu: Dataset Overview
 # ---------------------------
 if menu == "Dataset Overview":
     st.subheader("📊 Dataset Overview")
-    st.write("First 10 rows:")
+    st.markdown("""
+    **Cleveland Heart Disease Dataset** – 303 patient records, 13 clinical features.
+    - **target**: 0 = no heart disease, 1 = heart disease
+    """)
+    st.write("First 10 rows after preprocessing:")
     st.dataframe(df.head(10))
     st.write("Last 10 rows:")
     st.dataframe(df.tail(10))
-    st.write(f"**Total samples:** {df.shape[0]}")
+    st.write(f"**Shape:** {df.shape}")
+    st.write("**Missing values:**", df.isnull().sum().sum())
     st.write("**Target distribution:**")
     st.bar_chart(df['target'].value_counts())
+    col1, col2 = st.columns(2)
+    col1.metric("No Heart Disease", (df['target']==0).sum())
+    col2.metric("Heart Disease", (df['target']==1).sum())
 
 # ---------------------------
 # Menu: Train Models
 # ---------------------------
 elif menu == "Train Models":
-    st.subheader("⚙️ Train KNN & SVM with SMOTE")
+    st.subheader("⚙️ Train KNN & SVM Models (with SMOTE balancing)")
     X = df.drop('target', axis=1)
     y = df['target']
-    
-    st.write("Original class distribution:")
+
+    st.write("### Original class distribution")
     st.write(y.value_counts())
-    
-    test_size = st.slider("Test size (%)", 10, 40, 20) / 100
-    
+
+    test_size = st.slider("Test set size (%)", 10, 40, 20) / 100
+
     if st.button("🚀 Train Models"):
         with st.spinner("Training in progress..."):
-            # Split
+            # Split first
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=test_size, random_state=42, stratify=y
             )
-            # SMOTE
+            # Apply SMOTE only on training set
             smote = SMOTE(random_state=42)
             X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
-            st.write("After SMOTE (training set):")
+
+            st.write("### Class distribution after SMOTE (training set)")
             st.write(pd.Series(y_train_res).value_counts())
-            
-            # Scale
+
+            # Scale features
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train_res)
             X_test_scaled = scaler.transform(X_test)
-            
-            # Save scaler and models
-            os.makedirs("models", exist_ok=True)
+
+            # Save scaler
+            if not os.path.exists("models"):
+                os.makedirs("models")
             joblib.dump(scaler, "models/scaler.joblib")
-            
-            knn = KNeighborsClassifier(n_neighbors=5)
-            svm = SVC(probability=True, random_state=42)
-            knn.fit(X_train_scaled, y_train_res)
-            svm.fit(X_train_scaled, y_train_res)
-            joblib.dump(knn, "models/knn.joblib")
-            joblib.dump(svm, "models/svm.joblib")
-            
-            # Evaluate
-            results = []
-            for name, model in [("KNN", knn), ("SVM", svm)]:
-                y_pred = model.predict(X_test_scaled)
-                acc = accuracy_score(y_test, y_pred)
-                prec = precision_score(y_test, y_pred)
-                rec = recall_score(y_test, y_pred)
-                f1 = f1_score(y_test, y_pred)
-                mse = mean_squared_error(y_test, y_pred)
-                rmse = np.sqrt(mse)
-                results.append({"Model": name, "Accuracy": acc, "Precision": prec,
-                                "Recall": rec, "F1 Score": f1, "MSE": mse, "RMSE": rmse})
-            st.session_state.performance_test = results
+            st.session_state.scaler = scaler
+
+            # Train models
+            models = train_models(X_train_scaled, y_train_res)
             st.session_state.trained = True
-        st.success("✅ Models trained and saved!")
-        st.subheader("Test Set Performance")
-        st.dataframe(pd.DataFrame(results))
+
+            # Evaluate
+            perf_train = []
+            perf_test = []
+            for name, model in models.items():
+                y_train_pred = model.predict(X_train_scaled)
+                y_test_pred = model.predict(X_test_scaled)
+
+                def get_metrics(y_true, y_pred):
+                    acc = accuracy_score(y_true, y_pred)
+                    prec = precision_score(y_true, y_pred)
+                    rec = recall_score(y_true, y_pred)
+                    f1 = f1_score(y_true, y_pred)
+                    mse = mean_squared_error(y_true, y_pred)
+                    rmse = np.sqrt(mse)
+                    return acc, prec, rec, f1, mse, rmse
+
+                train_metrics = get_metrics(y_train_res, y_train_pred)
+                test_metrics = get_metrics(y_test, y_test_pred)
+
+                perf_train.append({
+                    "Model": name,
+                    "Accuracy": train_metrics[0],
+                    "Precision": train_metrics[1],
+                    "Recall": train_metrics[2],
+                    "F1 Score": train_metrics[3],
+                    "MSE": train_metrics[4],
+                    "RMSE": train_metrics[5]
+                })
+                perf_test.append({
+                    "Model": name,
+                    "Accuracy": test_metrics[0],
+                    "Precision": test_metrics[1],
+                    "Recall": test_metrics[2],
+                    "F1 Score": test_metrics[3],
+                    "MSE": test_metrics[4],
+                    "RMSE": test_metrics[5]
+                })
+
+            st.session_state.performance_train = perf_train
+            st.session_state.performance_test = perf_test
+
+        st.success("✅ Models trained and saved successfully!")
+
+        st.subheader("📈 Performance on Training Set")
+        st.dataframe(pd.DataFrame(perf_train))
+        st.subheader("📉 Performance on Test Set")
+        st.dataframe(pd.DataFrame(perf_test))
 
 # ---------------------------
 # Menu: Predict Heart Disease
 # ---------------------------
 elif menu == "Predict Heart Disease":
     st.subheader("🩺 Enter Patient Data")
-    if not os.path.exists("models/knn.joblib"):
-        st.warning("Models not trained yet. Please go to 'Train Models' first.")
+    if not st.session_state.trained and not (os.path.exists("models/knn.joblib") and os.path.exists("models/scaler.joblib")):
+        st.warning("Models not found. Please go to **Train Models** first.")
     else:
+        # Input fields (all 13 features)
         col1, col2 = st.columns(2)
         with col1:
-            age = st.number_input("Age", 1, 120, 50)
-            sex = st.selectbox("Sex", [0,1], format_func=lambda x: "Female" if x==0 else "Male")
-            cp = st.selectbox("Chest Pain Type (0-3)", [0,1,2,3])
+            age = st.number_input("Age (years)", 1, 120, 50)
+            sex = st.selectbox("Sex", [0, 1], format_func=lambda x: "Female" if x==0 else "Male")
+            cp = st.selectbox("Chest Pain Type", [0,1,2,3], format_func=lambda x: {0:"Typical angina",1:"Atypical angina",2:"Non-anginal pain",3:"Asymptomatic"}[x])
             trestbps = st.number_input("Resting BP (mm Hg)", 80, 200, 120)
             chol = st.number_input("Cholesterol (mg/dl)", 100, 600, 200)
-            fbs = st.selectbox("Fasting Blood Sugar >120", [0,1])
-            restecg = st.selectbox("Resting ECG (0-2)", [0,1,2])
+            fbs = st.selectbox("Fasting Blood Sugar >120 mg/dl", [0,1], format_func=lambda x: "False" if x==0 else "True")
+            restecg = st.selectbox("Resting ECG", [0,1,2], format_func=lambda x: {0:"Normal",1:"ST-T abnormality",2:"LV hypertrophy"}[x])
         with col2:
             thalach = st.number_input("Max Heart Rate (bpm)", 60, 220, 150)
-            exang = st.selectbox("Exercise Angina", [0,1])
+            exang = st.selectbox("Exercise Induced Angina", [0,1], format_func=lambda x: "No" if x==0 else "Yes")
             oldpeak = st.number_input("ST Depression", 0.0, 6.0, 1.0, step=0.1)
-            slope = st.selectbox("Slope (0-2)", [0,1,2])
-            ca = st.selectbox("Major Vessels (0-3)", [0,1,2,3])
-            thal = st.selectbox("Thalassemia (1-3)", [1,2,3])
-        
+            slope = st.selectbox("Slope of ST Segment", [0,1,2], format_func=lambda x: {0:"Upsloping",1:"Flat",2:"Downsloping"}[x])
+            ca = st.selectbox("Number of Major Vessels", [0,1,2,3])
+            thal = st.selectbox("Thalassemia", [1,2,3], format_func=lambda x: {1:"Normal",2:"Fixed defect",3:"Reversible defect"}[x])
+
         model_choice = st.radio("Select Model", ["KNN", "SVM"], horizontal=True)
-        
+
         if st.button("Predict"):
+            # Load scaler and model
             scaler = joblib.load("models/scaler.joblib")
-            model = joblib.load(f"models/{model_choice.lower()}.joblib")
-            input_data = np.array([[age, sex, cp, trestbps, chol, fbs, restecg,
-                                    thalach, exang, oldpeak, slope, ca, thal]])
-            input_scaled = scaler.transform(input_data)
-            pred = model.predict(input_scaled)[0]
-            prob = model.predict_proba(input_scaled)[0][pred] * 100
-            result = "Heart Disease Detected" if pred == 1 else "No Heart Disease"
-            st.success(f"**Prediction:** {result} (confidence {prob:.1f}%)")
+            model = load_model(model_choice)
+            if model is None:
+                st.error(f"{model_choice} model not found. Train models first.")
+            else:
+                input_data = np.array([[age, sex, cp, trestbps, chol, fbs, restecg,
+                                        thalach, exang, oldpeak, slope, ca, thal]])
+                input_scaled = scaler.transform(input_data)
+                pred = model.predict(input_scaled)[0]
+                prob = model.predict_proba(input_scaled)[0][pred] * 100
+                result = "Heart Disease Detected" if pred == 1 else "No Heart Disease"
+                st.success(f"**Prediction:** {result} (confidence {prob:.1f}%)")
 
 # ---------------------------
 # Menu: Data Visualization
 # ---------------------------
 elif menu == "Data Visualization":
-    st.subheader("📊 Visualizations")
-    if not st.session_state.trained:
-        st.warning("Please train models first.")
+    st.subheader("📊 Data Visualizations")
+    if not st.session_state.trained and not os.path.exists("models/knn.joblib"):
+        st.warning("Models not trained. Please train them first in 'Train Models'.")
     else:
         # Correlation heatmap
-        st.write("### Correlation Matrix")
-        fig, ax = plt.subplots(figsize=(10,8))
-        sns.heatmap(df.corr(), annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
+        st.write("### Correlation Matrix of Features")
+        fig, ax = plt.subplots(figsize=(10, 8))
+        corr = df.corr()
+        sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
         st.pyplot(fig)
-        
-        # Performance bar chart
+
+        # Model performance comparison
         if st.session_state.performance_test:
+            st.write("### Model Performance Comparison (Test Set)")
             perf_df = pd.DataFrame(st.session_state.performance_test)
             metrics = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
             melted = perf_df.melt(id_vars='Model', value_vars=metrics, var_name='Metric', value_name='Score')
-            fig2, ax2 = plt.subplots()
+            fig2, ax2 = plt.subplots(figsize=(8,5))
             sns.barplot(data=melted, x='Metric', y='Score', hue='Model', ax=ax2)
             ax2.set_ylim(0,1)
-            ax2.set_title("Model Performance Comparison")
+            ax2.set_title("KNN vs SVM Performance")
             st.pyplot(fig2)
+
+            # Confusion matrices (load models and compute)
+            st.write("### Confusion Matrices")
+            scaler = joblib.load("models/scaler.joblib")
+            X = df.drop('target', axis=1)
+            y = df['target']
+            X_scaled = scaler.fit_transform(X)  # refit scaler on full data for display (or use saved)
+            # For simplicity, we compute on whole dataset (not ideal but for demo)
+            knn = load_model("KNN")
+            svm = load_model("SVM")
+            if knn and svm:
+                fig3, axes = plt.subplots(1,2, figsize=(12,5))
+                for ax, (name, model) in zip(axes, [("KNN", knn), ("SVM", svm)]):
+                    y_pred = model.predict(X_scaled)
+                    cm = confusion_matrix(y, y_pred)
+                    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
+                                xticklabels=['No Disease', 'Disease'],
+                                yticklabels=['No Disease', 'Disease'])
+                    ax.set_title(f"{name} - Confusion Matrix")
+                st.pyplot(fig3)
+
+                # ROC curves
+                st.write("### ROC Curves")
+                fig4, ax4 = plt.subplots(figsize=(8,6))
+                for name, model in [("KNN", knn), ("SVM", svm)]:
+                    if hasattr(model, "predict_proba"):
+                        y_score = model.predict_proba(X_scaled)[:,1]
+                    else:
+                        y_score = model.decision_function(X_scaled)
+                    fpr, tpr, _ = roc_curve(y, y_score)
+                    roc_auc = auc(fpr, tpr)
+                    ax4.plot(fpr, tpr, label=f"{name} (AUC = {roc_auc:.2f})")
+                ax4.plot([0,1], [0,1], 'k--')
+                ax4.set_xlabel("False Positive Rate")
+                ax4.set_ylabel("True Positive Rate")
+                ax4.set_title("ROC Curves")
+                ax4.legend()
+                st.pyplot(fig4)
+        else:
+            st.info("No performance data yet. Train models first.")
