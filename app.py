@@ -1,5 +1,7 @@
 """
 Heart Disease Prediction Web App
+Uses KNN and SVM with SMOTE balancing
+Includes comparison tables and target distribution table.
 """
 
 import streamlit as st
@@ -49,11 +51,9 @@ def load_data():
     
     # Convert target to binary (0/1)
     try:
-        # Try numeric conversion
         numeric_target = pd.to_numeric(df[target_col])
         df['target'] = numeric_target.apply(lambda x: 1 if x > 0 else 0)
     except:
-        # String target (e.g., 'Presence'/'Absence')
         target_str = df[target_col].astype(str).str.lower()
         if 'presence' in target_str.values or 'present' in target_str.values:
             df['target'] = target_str.apply(lambda x: 1 if x in ['presence','present'] else 0)
@@ -62,16 +62,11 @@ def load_data():
         else:
             df['target'] = target_str.apply(lambda x: 0 if x in ['0','absence','no'] else 1)
     
-    # Drop original target column
     df = df.drop(columns=[target_col])
-    
-    # Force all features to numeric, drop rows with NaN
     df = df.apply(pd.to_numeric, errors='coerce')
     before = len(df)
     df = df.dropna()
     st.write(f"Dropped {before - len(df)} rows with missing values.")
-    
-    # Final cleaning
     df = df.astype(float)
     df['target'] = df['target'].astype(int)
     st.write(f"✅ Loaded {len(df)} patients.")
@@ -91,11 +86,10 @@ if df is None or df.empty:
     st.error("No data loaded. Please check your heart.csv file.")
     st.stop()
 
-# Define features and target (top level, no indentation)
 X = df.drop('target', axis=1)
 y = df['target']
 
-# Sidebar menu - defined once
+# Sidebar menu
 menu = st.sidebar.selectbox("Menu", ["Dataset Overview", "Train Models", "Predict Heart Disease", "Data Visualization"])
 
 # Session state
@@ -115,7 +109,16 @@ if menu == "Dataset Overview":
     st.dataframe(df.tail(10))
     st.write(f"**Total samples:** {df.shape[0]}")
     st.write("**Target distribution:**")
-    st.bar_chart(df['target'].value_counts())
+    col1, col2 = st.columns(2)
+    with col1:
+        st.bar_chart(df['target'].value_counts())
+    with col2:
+        # Table for target distribution
+        target_counts = df['target'].value_counts().reset_index()
+        target_counts.columns = ['Heart Disease', 'Count']
+        target_counts['Percentage'] = (target_counts['Count'] / df.shape[0] * 100).round(2)
+        target_counts['Heart Disease'] = target_counts['Heart Disease'].map({0: 'No Disease', 1: 'Disease'})
+        st.table(target_counts)
 
 # ---------------------------
 # Menu: Train Models
@@ -144,7 +147,6 @@ elif menu == "Train Models":
             X_train_scaled = scaler.fit_transform(X_train_res)
             X_test_scaled = scaler.transform(X_test)
             
-            # Save scaler
             os.makedirs("models", exist_ok=True)
             joblib.dump(scaler, "models/scaler.joblib")
             
@@ -156,7 +158,7 @@ elif menu == "Train Models":
             joblib.dump(knn, "models/knn.joblib")
             joblib.dump(svm, "models/svm.joblib")
             
-            # Evaluate
+            # Evaluate and create comparison table
             results = []
             for name, model in [("KNN", knn), ("SVM", svm)]:
                 y_pred = model.predict(X_test_scaled)
@@ -170,9 +172,17 @@ elif menu == "Train Models":
                                 "Recall": rec, "F1 Score": f1, "MSE": mse, "RMSE": rmse})
             st.session_state.performance_test = results
             st.session_state.trained = True
+            
+            # Display comparison table
+            st.subheader("📊 Model Performance Comparison (Test Set)")
+            comparison_df = pd.DataFrame(results)
+            # Format to 4 decimal places for readability
+            for col in comparison_df.columns:
+                if col != "Model":
+                    comparison_df[col] = comparison_df[col].map(lambda x: f"{x:.4f}")
+            st.table(comparison_df)
+            
         st.success("✅ Models trained and saved!")
-        st.subheader("Test Set Performance")
-        st.dataframe(pd.DataFrame(results))
 
 # ---------------------------
 # Menu: Predict Heart Disease
@@ -218,21 +228,36 @@ elif menu == "Predict Heart Disease":
 elif menu == "Data Visualization":
     st.subheader("📊 Visualizations")
     if not st.session_state.trained:
-        st.warning("Please train models first.")
+        st.warning("Please train models first to see performance charts.")
     else:
-        # Correlation heatmap
-        st.write("### Correlation Matrix")
+        # 1. Target distribution table (repeated here for completeness)
+        st.write("### Target Distribution")
+        target_counts = df['target'].value_counts().reset_index()
+        target_counts.columns = ['Heart Disease', 'Count']
+        target_counts['Percentage'] = (target_counts['Count'] / df.shape[0] * 100).round(2)
+        target_counts['Heart Disease'] = target_counts['Heart Disease'].map({0: 'No Disease', 1: 'Disease'})
+        st.table(target_counts)
+        
+        # 2. Correlation matrix heatmap
+        st.write("### Correlation Matrix of Features")
         fig, ax = plt.subplots(figsize=(10,8))
         sns.heatmap(df.corr(), annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
         st.pyplot(fig)
         
-        # Performance bar chart
+        # 3. Performance comparison table and bar chart
         if st.session_state.performance_test:
+            st.write("### Model Performance Comparison")
             perf_df = pd.DataFrame(st.session_state.performance_test)
+            st.table(perf_df.style.format({
+                'Accuracy': '{:.4f}', 'Precision': '{:.4f}', 'Recall': '{:.4f}',
+                'F1 Score': '{:.4f}', 'MSE': '{:.4f}', 'RMSE': '{:.4f}'
+            }))
+            
+            # Bar chart
             metrics = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
             melted = perf_df.melt(id_vars='Model', value_vars=metrics, var_name='Metric', value_name='Score')
-            fig2, ax2 = plt.subplots()
+            fig2, ax2 = plt.subplots(figsize=(8,5))
             sns.barplot(data=melted, x='Metric', y='Score', hue='Model', ax=ax2)
             ax2.set_ylim(0,1)
-            ax2.set_title("Model Performance Comparison")
+            ax2.set_title("KNN vs SVM Performance")
             st.pyplot(fig2)
