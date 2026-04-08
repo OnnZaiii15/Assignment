@@ -69,8 +69,6 @@ def load_data():
     st.write(f"Dropped {before - len(df)} rows with missing values.")
     df = df.astype(float)
     df['target'] = df['target'].astype(int)
-    st.write(f"✅ Loaded {len(df)} patients.")
-    st.write("Target distribution:", df['target'].value_counts().to_dict())
     return df
 
 # Helper function to show target distribution table
