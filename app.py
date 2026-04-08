@@ -128,95 +128,31 @@ if menu == "Dataset Overview":
     col1.metric("No Heart Disease", (df['target']==0).sum())
     col2.metric("Heart Disease", (df['target']==1).sum())
 
-# ---------------------------
-# Menu: Train Models
-# ---------------------------
-elif menu == "Train Models":
-    st.subheader("⚙️ Train KNN & SVM Models (with SMOTE balancing)")
-    X = df.drop('target', axis=1)
-    y = df['target']
-
-    st.write("### Original class distribution")
-    st.write(y.value_counts())
-
-    test_size = st.slider("Test set size (%)", 10, 40, 20) / 100
-
-    if st.button("🚀 Train Models"):
-        with st.spinner("Training in progress..."):
-            # Split first
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=42, stratify=y
-            )
-            # Apply SMOTE only on training set
-            smote = SMOTE(random_state=42)
-            X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
-
-            st.write("### Class distribution after SMOTE (training set)")
-            st.write(pd.Series(y_train_res).value_counts())
-
-            # Scale features
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train_res)
-            X_test_scaled = scaler.transform(X_test)
-
-            # Save scaler
-            if not os.path.exists("models"):
-                os.makedirs("models")
-            joblib.dump(scaler, "models/scaler.joblib")
-            st.session_state.scaler = scaler
-
-            # Train models
-            models = train_models(X_train_scaled, y_train_res)
-            st.session_state.trained = True
-
-            # Evaluate
-            perf_train = []
-            perf_test = []
-            for name, model in models.items():
-                y_train_pred = model.predict(X_train_scaled)
-                y_test_pred = model.predict(X_test_scaled)
-
-                def get_metrics(y_true, y_pred):
-                    acc = accuracy_score(y_true, y_pred)
-                    prec = precision_score(y_true, y_pred)
-                    rec = recall_score(y_true, y_pred)
-                    f1 = f1_score(y_true, y_pred)
-                    mse = mean_squared_error(y_true, y_pred)
-                    rmse = np.sqrt(mse)
-                    return acc, prec, rec, f1, mse, rmse
-
-                train_metrics = get_metrics(y_train_res, y_train_pred)
-                test_metrics = get_metrics(y_test, y_test_pred)
-
-                perf_train.append({
-                    "Model": name,
-                    "Accuracy": train_metrics[0],
-                    "Precision": train_metrics[1],
-                    "Recall": train_metrics[2],
-                    "F1 Score": train_metrics[3],
-                    "MSE": train_metrics[4],
-                    "RMSE": train_metrics[5]
-                })
-                perf_test.append({
-                    "Model": name,
-                    "Accuracy": test_metrics[0],
-                    "Precision": test_metrics[1],
-                    "Recall": test_metrics[2],
-                    "F1 Score": test_metrics[3],
-                    "MSE": test_metrics[4],
-                    "RMSE": test_metrics[5]
-                })
-
-            st.session_state.performance_train = perf_train
-            st.session_state.performance_test = perf_test
-
-        st.success("✅ Models trained and saved successfully!")
-
-        st.subheader("📈 Performance on Training Set")
-        st.dataframe(pd.DataFrame(perf_train))
-        st.subheader("📉 Performance on Test Set")
-        st.dataframe(pd.DataFrame(perf_test))
-
+if st.button("🚀 Train Models"):
+    with st.spinner("Training in progress..."):
+        # Split
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42, stratify=y)
+        # SMOTE
+        smote = SMOTE(random_state=42)
+        X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
+        # Scale
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train_res)
+        X_test_scaled = scaler.transform(X_test)
+        # Save scaler
+        os.makedirs("models", exist_ok=True)
+        joblib.dump(scaler, "models/scaler.joblib")
+        
+        # Train models (inline, no function call)
+        knn = KNeighborsClassifier(n_neighbors=5)
+        svm = SVC(probability=True, random_state=42)
+        knn.fit(X_train_scaled, y_train_res)
+        svm.fit(X_train_scaled, y_train_res)
+        joblib.dump(knn, "models/knn.joblib")
+        joblib.dump(svm, "models/svm.joblib")
+        models = {"KNN": knn, "SVM": svm}
+        
+        # Evaluation...
 # ---------------------------
 # Menu: Predict Heart Disease
 # ---------------------------
