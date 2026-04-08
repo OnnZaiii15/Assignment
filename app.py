@@ -96,6 +96,17 @@ def load_data():
 
 
 df = load_data()
+def train_models(X_train, y_train):
+    """Train KNN and SVM models and return them."""
+    knn = KNeighborsClassifier(n_neighbors=5)
+    svm = SVC(probability=True, random_state=42)
+    knn.fit(X_train, y_train)
+    svm.fit(X_train, y_train)
+    # Save models
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(knn, "models/knn.joblib")
+    joblib.dump(svm, "models/svm.joblib")
+    return {"KNN": knn, "SVM": svm}
 
 # Session state
 if "trained" not in st.session_state:
@@ -152,7 +163,6 @@ if st.button("🚀 Train Models"):
         joblib.dump(svm, "models/svm.joblib")
         models = {"KNN": knn, "SVM": svm}
         
-        # Evaluation...
 # ---------------------------
 # Menu: Predict Heart Disease
 # ---------------------------
