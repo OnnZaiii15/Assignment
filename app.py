@@ -95,8 +95,7 @@ def load_data():
     st.write(df['target'].value_counts())
     return df
 
-
-d# After load_data() and sidebar menu, but before any button
+After load_data() and sidebar menu, but before any button
 df = load_data()
 
 # Features and target – these must be at top level (no indentation)
