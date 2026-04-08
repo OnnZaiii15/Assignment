@@ -96,21 +96,21 @@ def load_data():
     return df
 
 
+d# After load_data() and sidebar menu, but before any button
 df = load_data()
-    X = df.drop('target', axis=1)
-    y = df['target']
-def train_models(X_train, y_train):
-    """Train KNN and SVM models and return them."""
-    knn = KNeighborsClassifier(n_neighbors=5)
-    svm = SVC(probability=True, random_state=42)
-    knn.fit(X_train, y_train)
-    svm.fit(X_train, y_train)
-    # Save models
-    os.makedirs("models", exist_ok=True)
-    joblib.dump(knn, "models/knn.joblib")
-    joblib.dump(svm, "models/svm.joblib")
-    return {"KNN": knn, "SVM": svm}
-    
+
+# Features and target – these must be at top level (no indentation)
+X = df.drop('target', axis=1)
+y = df['target']
+
+# Session state
+if "trained" not in st.session_state:
+    st.session_state.trained = False
+if "performance_test" not in st.session_state:
+    st.session_state.performance_test = []
+
+# Menu handling
+menu = st.sidebar.selectbox("Menu", ["Dataset Overview", "Train Models", "Predict Heart Disease", "Data Visualization"])
 
 # Session state
 if "trained" not in st.session_state:
