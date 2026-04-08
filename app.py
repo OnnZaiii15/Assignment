@@ -1,7 +1,7 @@
 """
 Heart Disease Prediction Web App
 Uses KNN and SVM with SMOTE balancing
-Includes comparison tables and target distribution table.
+Includes target distribution table in Train Models, Predict Heart Disease, and Data Visualization.
 """
 
 import streamlit as st
@@ -73,6 +73,14 @@ def load_data():
     st.write("Target distribution:", df['target'].value_counts().to_dict())
     return df
 
+# Helper function to show target distribution table
+def show_target_distribution(df):
+    target_counts = df['target'].value_counts().reset_index()
+    target_counts.columns = ['Heart Disease', 'Count']
+    target_counts['Percentage'] = (target_counts['Count'] / df.shape[0] * 100).round(2)
+    target_counts['Heart Disease'] = target_counts['Heart Disease'].map({0: 'No Disease', 1: 'Disease'})
+    st.table(target_counts)
+
 # ---------------------------
 # Streamlit UI
 # ---------------------------
@@ -113,19 +121,19 @@ if menu == "Dataset Overview":
     with col1:
         st.bar_chart(df['target'].value_counts())
     with col2:
-        # Table for target distribution
-        target_counts = df['target'].value_counts().reset_index()
-        target_counts.columns = ['Heart Disease', 'Count']
-        target_counts['Percentage'] = (target_counts['Count'] / df.shape[0] * 100).round(2)
-        target_counts['Heart Disease'] = target_counts['Heart Disease'].map({0: 'No Disease', 1: 'Disease'})
-        st.table(target_counts)
+        show_target_distribution(df)
 
 # ---------------------------
 # Menu: Train Models
 # ---------------------------
 elif menu == "Train Models":
     st.subheader("⚙️ Train KNN & SVM with SMOTE")
-    st.write("Original class distribution:")
+    
+    # Show target distribution table before training
+    st.write("### Target Distribution in the Dataset")
+    show_target_distribution(df)
+    
+    st.write("### Original Class Distribution (before SMOTE)")
     st.write(y.value_counts())
     
     test_size = st.slider("Test size (%)", 10, 40, 20) / 100
@@ -176,19 +184,23 @@ elif menu == "Train Models":
             # Display comparison table
             st.subheader("📊 Model Performance Comparison (Test Set)")
             comparison_df = pd.DataFrame(results)
-            # Format to 4 decimal places for readability
             for col in comparison_df.columns:
                 if col != "Model":
                     comparison_df[col] = comparison_df[col].map(lambda x: f"{x:.4f}")
             st.table(comparison_df)
             
-        st.success("✅ Models trained and saved!")
+        st.success("✅ All Models are trained and saved")
 
 # ---------------------------
 # Menu: Predict Heart Disease
 # ---------------------------
 elif menu == "Predict Heart Disease":
     st.subheader("🩺 Enter Patient Data")
+    
+    # Show target distribution table to give context
+    st.write("### Target Distribution in Training Data (for reference)")
+    show_target_distribution(df)
+    
     if not os.path.exists("models/knn.joblib"):
         st.warning("Models not trained yet. Please go to 'Train Models' first.")
     else:
@@ -227,17 +239,14 @@ elif menu == "Predict Heart Disease":
 # ---------------------------
 elif menu == "Data Visualization":
     st.subheader("📊 Visualizations")
+    
+    # 1. Target distribution table
+    st.write("### Target Distribution")
+    show_target_distribution(df)
+    
     if not st.session_state.trained:
         st.warning("Please train models first to see performance charts.")
     else:
-        # 1. Target distribution table (repeated here for completeness)
-        st.write("### Target Distribution")
-        target_counts = df['target'].value_counts().reset_index()
-        target_counts.columns = ['Heart Disease', 'Count']
-        target_counts['Percentage'] = (target_counts['Count'] / df.shape[0] * 100).round(2)
-        target_counts['Heart Disease'] = target_counts['Heart Disease'].map({0: 'No Disease', 1: 'Disease'})
-        st.table(target_counts)
-        
         # 2. Correlation matrix heatmap
         st.write("### Correlation Matrix of Features")
         fig, ax = plt.subplots(figsize=(10,8))
