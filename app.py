@@ -98,6 +98,8 @@ def load_data():
 df = load_data()
 def train_models(X_train, y_train):
     """Train KNN and SVM models and return them."""
+      X = df.drop('target', axis=1)
+      y = df['target']
     knn = KNeighborsClassifier(n_neighbors=5)
     svm = SVC(probability=True, random_state=42)
     knn.fit(X_train, y_train)
@@ -107,8 +109,7 @@ def train_models(X_train, y_train):
     joblib.dump(knn, "models/knn.joblib")
     joblib.dump(svm, "models/svm.joblib")
     return {"KNN": knn, "SVM": svm}
-      X = df.drop('target', axis=1)
-      y = df['target']
+    
 
 # Session state
 if "trained" not in st.session_state:
