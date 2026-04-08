@@ -66,7 +66,6 @@ def load_data():
     df = df.apply(pd.to_numeric, errors='coerce')
     before = len(df)
     df = df.dropna()
-    st.write(f"Dropped {before - len(df)} rows with missing values.")
     df = df.astype(float)
     df['target'] = df['target'].astype(int)
     return df
