@@ -32,6 +32,8 @@ menu = st.sidebar.selectbox("Menu", ["Dataset Overview", "Train Models", "Predic
 # ---------------------------
 @st.cache_data
 def load_data():
+    X = df.drop('target', axis=1)
+    y = df['target']
     # Try to read the CSV – first assume it has a header
     try:
         df = pd.read_csv("heart.csv")
@@ -98,8 +100,6 @@ def load_data():
 df = load_data()
 def train_models(X_train, y_train):
     """Train KNN and SVM models and return them."""
-      X = df.drop('target', axis=1)
-      y = df['target']
     knn = KNeighborsClassifier(n_neighbors=5)
     svm = SVC(probability=True, random_state=42)
     knn.fit(X_train, y_train)
@@ -144,7 +144,6 @@ if menu == "Dataset Overview":
 
 if st.button("🚀 Train Models"):
     with st.spinner("Training in progress..."):
-      
         # Split
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42, stratify=y)
         # SMOTE
