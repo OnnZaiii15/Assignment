@@ -97,8 +97,8 @@ def load_data():
 
 
 df = load_data()
-X = df.drop('target', axis=1)
-y = df['target']
+    X = df.drop('target', axis=1)
+    y = df['target']
 def train_models(X_train, y_train):
     """Train KNN and SVM models and return them."""
     knn = KNeighborsClassifier(n_neighbors=5)
