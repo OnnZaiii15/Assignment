@@ -1,7 +1,5 @@
 """
 Heart Disease Prediction Web App
-Uses KNN and SVM with SMOTE balancing
-Includes target distribution table in Train Models, Predict Heart Disease, and Data Visualization.
 """
 
 import streamlit as st
