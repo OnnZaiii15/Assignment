@@ -81,7 +81,6 @@ def show_target_distribution(df):
 # ---------------------------
 st.set_page_config(page_title="Heart Disease Predictor", layout="wide")
 st.title("❤️ Heart Disease Prediction Web App")
-st.markdown("Uses **KNN** and **SVM** with SMOTE balancing")
 
 # Load data
 df = load_data()
